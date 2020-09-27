@@ -1,0 +1,61 @@
+// (c) 2002-2019 Behaviour Interactive Inc. All rights reserved.
+// Unauthorized copying of this file, via any medium is strictly prohibited.
+// This file proprietary and confidential.
+        
+// Creation: mar. 2002-07-30 
+ 
+
+global float $gfResetCamNearClipPlane = 1.0;
+global float $gfResetCamFarClipPlane  = 50000.0;
+
+proc resetCamClipPlane( string $aszCamera )
+{
+	global float $gfResetCamNearClipPlane;
+	global float $gfResetCamFarClipPlane;
+
+	string $szTransform[] = `listRelatives -p $aszCamera`;
+	string $szCameraTransform = $szTransform[0];
+
+	// Validate that we have a camera
+	if( !isGameCamera( $szCameraTransform ) )
+	{
+		camera -e -nearClipPlane $gfResetCamNearClipPlane $aszCamera;
+		camera -e -farClipPlane $gfResetCamFarClipPlane $aszCamera;
+	}	
+}
+
+//@@resetCameraClipPlanes 
+//<GROUP ScriptGeneric>
+// 
+// Description : 
+//		Mets les clipping plane de toutes les cameras aux valeurs suivantes:
+//
+//      Near : 1.0
+//
+//      Far : 50000.0
+//
+// Parameters: 
+//      aucuns
+//
+// Return value : 
+//      aucunes
+//
+// Flags :
+//		aucuns
+// 
+// See Also :
+//
+//
+// Example :
+//
+//
+global proc resetCameraClipPlanes()
+{
+	string $szCameras[] =  `ls -ca`;
+	string $szCamera;
+	
+	for( $szCamera in $szCameras )
+	{
+		resetCamClipPlane( $szCamera );
+	}	
+}
