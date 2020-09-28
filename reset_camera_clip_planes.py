@@ -1,14 +1,17 @@
+# coding=utf-8
 """
 Tool to handle the reset camera/s clipping plane in Maya.
 
 This has been tested to run in Windows Maya2019.
 """
 
+__VERSION__ = "0.0.2"
+
 # TODOS:
 # - TODO: Refactor code into separate modules...
 # - TODO: Cleanup stylesheet
 # - TODO: Add callback of camera selection to update a widget displaying the cameras the user has selected
-
+# - TODO: Should implement maya.cmds messages for better feedback where there is an error...
 
 from collections import namedtuple
 from collections import OrderedDict
@@ -305,7 +308,7 @@ def destroy_child_widget(parent, child_name):
     for widget in parent.children():  # type: QWidget
 
         if widget.objectName() == child_name:
-            log.info('Closing previous instance of "%s"', child_name)
+            log.info('Closing previous instance of "%s"' % child_name)
             widget.close()
             widget.deleteLater()
 
@@ -337,7 +340,7 @@ def set_return_widget_tooltip_from_docstring(func):
 
 class ResetCameraClipPlanesUI(QWidget):
 
-    _VERSION_ = "0.0.1"
+    _VERSION_ = __VERSION__
 
     DISPLAY_NAME = 'BI - Reset Camera Clip Planes'
     INTERNAL_NAME = 'ResetCameraClipPlanesUI'
@@ -351,11 +354,11 @@ class ResetCameraClipPlanesUI(QWidget):
 
     DOCUMENTATION_PATH = "https://github.com/uncojohnco/task-2020-BI/blob/main/README.md"
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, parent=None, *args, **kwargs):
 
         self.destroy_previous_instance()
 
-        super(ResetCameraClipPlanesUI, self).__init__(*args, **kwargs)
+        super(ResetCameraClipPlanesUI, self).__init__(parent, *args, **kwargs)
 
         self.setWindowTitle("{} - v{}".format(self.DISPLAY_NAME, self._VERSION_))
         self.setObjectName(self.INTERNAL_NAME)
@@ -369,6 +372,21 @@ class ResetCameraClipPlanesUI(QWidget):
         self._clip_edit_far = None  # type: Union[QtWidgets.QLineEdit, None]
 
         self._apply_btn = None  # type: Union[QtWidgets.QPushButton, None]
+
+
+        # https://discourse.techart.online/t/how-to-make-a-pyside-ui-stay-on-top-of-maya-only/12473
+        # https://stackoverflow.com/questions/49502170/how-to-make-a-dialog-window-stay-on-top-of-only-maya-motionbuilder-parent-progra
+        # TODO: Noticed that the Tool UI would go behind the Maya window after making a selection in the viewport
+        # The below code should fix that, however the widget gets embedded into the UI
+        # Should add this widget to a QtWidgets.QMainWindow ?
+
+        # parent = parent or maya_main_window()
+        # self.setParent(parent)
+
+        # TODO: This is a temporary work around as this seems to make the window
+        # stay above all windows in the OS (╯°□°)╯︵ ┻━┻
+        # self.setWindowFlags(QtCore.Qt.Tool)
+        self.setWindowFlags(QtCore.Qt.WindowStaysOnTopHint)
 
     @classmethod
     def destroy_previous_instance(cls):
