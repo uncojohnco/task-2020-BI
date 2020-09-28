@@ -4,14 +4,21 @@ Tool to handle the reset camera/s clipping plane in Maya.
 This has been tested to run in Windows Maya2019.
 """
 
+# TODOS:
+# - TODO: Refactor code into separate modules...
+# - TODO: Cleanup stylesheet
+# - TODO: Add callback of camera selection to update a widget displaying the cameras the user has selected
+
+
 from collections import namedtuple
 from collections import OrderedDict
+from functools import wraps
 import logging
 import sys
 
 # Type hinting in PyCharm
 try:
-    from typing import Callable, Float, Generator, Iterable, Str
+    from typing import Callable, Float, Generator, Iterable, Int, Str, Union
 except ImportError:
     pass
 
@@ -51,7 +58,9 @@ class FailedToResolveFromSelectionError(Exception):
     pass
 
 
-# --- UI Utility Functions
+# TODO: Move Maya utils into it's own module...
+
+# --- Maya Utility Functions
 
 def maya_main_window():
     # type: () -> QWidget
@@ -63,27 +72,6 @@ def maya_main_window():
     main_window_ptr = omui.MQtUtil.mainWindow()
     return wrapInstance(long(main_window_ptr), QWidget)
 
-
-def destroy_child_widget(parent, child_name):
-    # type: (QWidget, str) -> None
-    """
-    Destroy a child widget of the specified parent widget.
-
-    :param parent: Parent widget to resolve child widgets from.
-    :param child_name: Name of the child widget to destroy.
-
-    :return: None
-
-    """
-    for widget in parent.children():  # type: QWidget
-
-        if widget.objectName() == child_name:
-            log.info('Closing previous instance of "%s"', child_name)
-            widget.close()
-            widget.deleteLater()
-
-
-# --- Maya Utility Functions
 
 def is_node_of_type(node, node_type):
     # type: (nt.DagNode, str) -> bool
@@ -98,8 +86,6 @@ def is_node_of_type(node, node_type):
     """
     return node.type() == node_type
 
-
-# --- Maya Functions
 
 def _in_view_msg_info(msg):
     prefix = "<span style=\"color:green;\">Info: </span>"
@@ -119,13 +105,22 @@ def _in_view_msg_error(msg):
     mc.inViewMessage(assistMessage=msg, pos='topRight', fade=True, fontSize=8)
 
 
-def camera_manip_toggle(cameras, enable=True):
+# --- Maya Camera Functions
+
+def camera_manip_clipping_toggle(cameras, enable=True):
     # type: (Iterable[nt.Camera], bool) -> None
     """
-    TODO: Add documentation, took me a while to work out how to toggle this programmatically...
-    # https://help.autodesk.com/view/MAYAUL/2020/ENU/?guid=__PyMel_generated_functions_pymel_core_rendering_pymel_core_rendering_renderManip_html
-    """
+    Function to toggle the visibility of the defined cameras "clipping planes"
+    visibility.
 
+    https://help.autodesk.com/view/MAYAUL/2020/ENU/?guid=__PyMel_generated_functions_pymel_core_rendering_pymel_core_rendering_renderManip_html
+
+    :param cameras: Cameras to toggle the manipulator visibility.
+    :param enable: True, show the manipulators. False, hide manipulators.
+
+    :return: None
+
+    """
     # sets the visibility of the camera component manipulator for "clipping planes"
     # ["cycling index", "center of interest", "pivot", "clipping planes", "unused"]
     if enable:
@@ -200,6 +195,8 @@ def get_all_cameras():
     return pm.ls(cameras=True)
 
 
+# TODO: Move MayaResetCameraClipPlanes into it's own module...
+
 # Encapsulate "Maya Reset Camera Clip Planes" behaviour as it's own object.
 # This is so it can be easily augmented with a different UI Frame work.
 class MayaResetCameraClipPlanes(object):
@@ -251,6 +248,7 @@ class MayaResetCameraClipPlanes(object):
             _in_view_msg_error(msg)
             raise
 
+        # TODO: Confirm if this is needed to propergate the raise traceback...
         except Exception:
             t, v, tb = sys.exc_info()
             raise t, v, tb
@@ -270,33 +268,62 @@ class MayaResetCameraClipPlanes(object):
 
     # TODO: Add documentation...
     # TODO: Handle if unable to resolve cameras from selection...
-    def camera_manip_show_selected(self):
+    @staticmethod
+    def camera_manip_show_selected():
         cameras = get_selected_cameras()
-        camera_manip_toggle(cameras, enable=True)
+        camera_manip_clipping_toggle(cameras, enable=True)
 
-    def camera_manip_hide_selected(self):
+    @staticmethod
+    def camera_manip_hide_selected():
         cameras = get_selected_cameras()
-        camera_manip_toggle(cameras, enable=False)
+        camera_manip_clipping_toggle(cameras, enable=False)
 
-    def camera_manip_show_all(self):
+    @staticmethod
+    def camera_manip_show_all():
         cameras = get_all_cameras()
-        camera_manip_toggle(cameras, enable=True)
+        camera_manip_clipping_toggle(cameras, enable=True)
 
-    def camera_manip_hide_all(self):
+    @staticmethod
+    def camera_manip_hide_all():
         cameras = get_all_cameras()
-        camera_manip_toggle(cameras, enable=False)
+        camera_manip_clipping_toggle(cameras, enable=False)
 
 
-from functools import wraps
+# TODO: Move refactor UI behaviour into it's own module...
+
+def destroy_child_widget(parent, child_name):
+    # type: (QWidget, str) -> None
+    """
+    Destroy a child widget of the specified parent widget.
+
+    :param parent: Parent widget to resolve child widgets from.
+    :param child_name: Name of the child widget to destroy.
+
+    :return: None
+
+    """
+    for widget in parent.children():  # type: QWidget
+
+        if widget.objectName() == child_name:
+            log.info('Closing previous instance of "%s"', child_name)
+            widget.close()
+            widget.deleteLater()
 
 
 def set_return_widget_tooltip_from_docstring(func):
+    """
+    Decorator to inject the function docstring into it's returned object tooltip.
+
+    Assumes that the returning object is of type QtWidgets.QWidget
+    """
     @wraps(func)
     def wrapper(*args, **kwargs):
-        qwidget = func(*args, **kwargs)
+        widget = func(*args, **kwargs)
         tooltip = func.func_doc  # type: QtWidgets.QWidget
-        qwidget.setToolTip(tooltip)
-        return qwidget
+
+        widget.setToolTip(tooltip)
+
+        return widget
 
     return wrapper
 
@@ -304,13 +331,19 @@ def set_return_widget_tooltip_from_docstring(func):
 # Encapsulate "Reset Camera Clip Planes UI" behaviour as it's own object.
 # This is so it can be easily augmented with a different  DCC such as
 # Houdini, 3DsMax, etc.
-class ResetCameraClipPlanesUI(MayaQWidgetDockableMixin, QWidget):
+
+# TODO: Reimplement "MayaQWidgetDockableMixin", removed as it was causing issues for setting the initial size of the widget...
+# class ResetCameraClipPlanesUI(MayaQWidgetDockableMixin, QWidget):
+
+class ResetCameraClipPlanesUI(QWidget):
+
+    _VERSION_ = "0.0.1"
 
     DISPLAY_NAME = 'BI - Reset Camera Clip Planes'
-    INTERNAL_NAME = 'ResetCameraClipPlanesUIa'
+    INTERNAL_NAME = 'ResetCameraClipPlanesUI'
 
-    WIDTH = 430
-    HEIGHT = 130
+    WIDTH = 640
+    HEIGHT = 160
 
     ResetCameraClipPlanes = MayaResetCameraClipPlanes
     DEFAULT_NEAR = DEFAULT_CLIP_PLANE_NEAR
@@ -320,23 +353,28 @@ class ResetCameraClipPlanesUI(MayaQWidgetDockableMixin, QWidget):
 
     def __init__(self, *args, **kwargs):
 
-        self._action = self.ResetCameraClipPlanes()
-
         self.destroy_previous_instance()
 
         super(ResetCameraClipPlanesUI, self).__init__(*args, **kwargs)
 
-        self.setWindowTitle(self.DISPLAY_NAME)
+        self.setWindowTitle("{} - v{}".format(self.DISPLAY_NAME, self._VERSION_))
         self.setObjectName(self.INTERNAL_NAME)
-
         self.setAttribute(QtCore.Qt.WA_DeleteOnClose, True)
 
-        # Widgets
-        self._camera_context_options_grp = None  # type: QtWidgets.QButtonGroup
-        self._clip_edit_near = None  # type: QtWidgets.QLineEdit
-        self._clip_edit_far = None  # type: QtWidgets.QLineEdit
+        self._actions = self.ResetCameraClipPlanes()
 
-        self._apply_btn = None  # type: QtWidgets.QPushButton
+        # Widgets
+        self._camera_context_options_grp = None  # type: Union[QtWidgets.QButtonGroup, None]
+        self._clip_edit_near = None  # type: Union[QtWidgets.QLineEdit, None]
+        self._clip_edit_far = None  # type: Union[QtWidgets.QLineEdit, None]
+
+        self._apply_btn = None  # type: Union[QtWidgets.QPushButton, None]
+
+    @classmethod
+    def destroy_previous_instance(cls):
+
+        root = maya_main_window()
+        destroy_child_widget(root, cls.INTERNAL_NAME)
 
     # Build UI behaviour
 
@@ -348,6 +386,7 @@ class ResetCameraClipPlanesUI(MayaQWidgetDockableMixin, QWidget):
             <b>Near Clip Plane</b>: Value to set the camera(s) "<i>nearClipPlane</i>"<br>
             <b> Far Clip Plane</b>: Value to set the camera(s) "<i>farClipPlane</i>"
         </nobr>
+
         """
 
         # Setup
@@ -393,9 +432,10 @@ class ResetCameraClipPlanesUI(MayaQWidgetDockableMixin, QWidget):
             <b>selected</b>: 'If checked, will set <b>selected cameras</b> clip values'<br>
             <b>     all</b>: 'If checked, will set <b>all cameras</b> in the scene clip values'
         </nobr>
+
         """
 
-        modes = self._action.action_map.keys()
+        modes = self._actions.action_map.keys()
 
         # Setup
 
@@ -430,12 +470,13 @@ class ResetCameraClipPlanesUI(MayaQWidgetDockableMixin, QWidget):
             <b>Apply button</b>: Click this button to set the clip plane values
             for the cameras defined by the "Camera Context"
         </nobr>
+
         """
+
+        # Build
 
         grp_box = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout()
-
-        # Build
 
         apply_btn = QtWidgets.QPushButton("Apply")
         layout.addStretch()
@@ -501,39 +542,35 @@ class ResetCameraClipPlanesUI(MayaQWidgetDockableMixin, QWidget):
             Tools to toggle the visibility of the Camera clip planes manipulators
             for the selected cameras.
         </nobr>
+
         """
 
         grp_box = QtWidgets.QGroupBox("Camera manip")
-        layout = QtWidgets.QVBoxLayout()
+        layout = QtWidgets.QGridLayout()
+        layout.setContentsMargins(5, 20, 5, 5)
 
-        tool_bar = QtWidgets.QToolBar()
-        tool_bar.setOrientation(QtCore.Qt.Vertical)
-        # TODO: Add icons...
-        tool_bar.setIconSize(QtCore.QSize(16, 16))
-
-        action_show_clip_manip = QtWidgets.QAction("show", self)
-        action_hide_clip_manip = QtWidgets.QAction("hide", self)
-        action_show_clip_manip_all = QtWidgets.QAction("show all", self)
-        action_hide_clip_manip_all = QtWidgets.QAction("hide all", self)
+        # TODO: Change these into icons...
+        action_show_clip_manip = QtWidgets.QPushButton("show sel", self)
+        action_hide_clip_manip = QtWidgets.QPushButton("hide sel", self)
+        action_show_clip_manip_all = QtWidgets.QPushButton("show all", self)
+        action_hide_clip_manip_all = QtWidgets.QPushButton("hide all", self)
 
         action_show_clip_manip.setToolTip("Show the camera clip planes manipulator for selected cameras")
         action_hide_clip_manip.setToolTip("Hide the camera clip planes manipulator for selected cameras")
         action_show_clip_manip.setToolTip("Show the camera clip planes manipulator for all cameras")
         action_hide_clip_manip.setToolTip("Hide the camera clip planes manipulator for all cameras")
 
-        tool_bar.addAction(action_show_clip_manip)
-        tool_bar.addAction(action_hide_clip_manip)
+        layout.addWidget(action_show_clip_manip, 0, 0)
+        layout.addWidget(action_hide_clip_manip, 1, 0)
 
-        tool_bar.addAction(action_show_clip_manip_all)
-        tool_bar.addAction(action_hide_clip_manip_all)
+        layout.addWidget(action_show_clip_manip_all, 0, 1)
+        layout.addWidget(action_hide_clip_manip_all, 1, 1)
 
-        action_show_clip_manip.triggered.connect(self._camera_manip_show_selected)
-        action_hide_clip_manip.triggered.connect(self._camera_manip_hide_selected)
-        action_show_clip_manip_all.triggered.connect(self._camera_manip_show_all)
-        action_hide_clip_manip_all.triggered.connect(self._camera_manip_hide_all)
+        action_show_clip_manip.clicked.connect(self._camera_manip_show_selected)
+        action_hide_clip_manip.clicked.connect(self._camera_manip_hide_selected)
+        action_show_clip_manip_all.clicked.connect(self._camera_manip_show_all)
+        action_hide_clip_manip_all.clicked.connect(self._camera_manip_hide_all)
 
-        layout.addSpacing(10)
-        layout.addWidget(tool_bar)
         grp_box.setLayout(layout)
 
         return grp_box
@@ -569,6 +606,39 @@ class ResetCameraClipPlanesUI(MayaQWidgetDockableMixin, QWidget):
 
         return main_layout
 
+    # Primary entry method
+
+    def display(self):
+
+        self._init_ui()
+
+        # TODO: the initial resize doesn't seem to be working as expected....
+        self.resize(self.WIDTH, self.HEIGHT)
+
+        # TODO: Reimplement "MayaQWidgetDockableMixin", removed as it was causing issues for setting the initial size of the widget...
+        # https://discourse.techart.online/t/mayas-dockableworkspacewidget-py-and-deleting-the-ui-upon-closing-maya/10664
+        # control = "{}WorkspaceControl".format(self.INTERNAL_NAME)
+        # if mc.workspaceControl(control, q=True, exists=True):
+        #     mc.workspaceControl(control,e=True, close=True)
+        #     mc.deleteUI(control, control=True)
+        #
+        # self.show(dockable=True, floating=True)
+
+        self.show()
+
+        # TODO: A proper style sheet should be implemented...
+        # TODO: Improve QGroupBox margins...
+        self.setStyleSheet(
+            "QToolTip { color: #ffffff; background-color: #2a82da; border: 1px solid white; font-size:10pt }"
+            # TODO: not sure why font weight isn't being set for the title...
+            "QGroupBox::title { background-color: transparent; font-weight: bold; color: grey }"
+            "QGroupBox { padding: 2px 5px; border-width: 1px; border-style: solid; }"
+            # TODO: reduece
+            # "QPushButton { margin 0px; padding 0px 20px; border-width: 1px; }"
+        )
+
+        log.info('Display of UI complete')
+
     # UI Actions commands
 
     def _reset_ui(self):
@@ -580,7 +650,7 @@ class ResetCameraClipPlanesUI(MayaQWidgetDockableMixin, QWidget):
 
     def _reset_cameras_clip_planes(self):
 
-        camera_actions = self._action
+        camera_actions = self._actions
 
         def _get_mode():
             btn_grp = self._camera_context_options_grp
@@ -602,62 +672,30 @@ class ResetCameraClipPlanesUI(MayaQWidgetDockableMixin, QWidget):
         camera_actions.reset_cameras()
 
     def _camera_manip_show_selected(self):
-        self._action.camera_manip_show_selected()
+        self._actions.camera_manip_show_selected()
 
     def _camera_manip_hide_selected(self):
-        self._action.camera_manip_hide_selected()
+        self._actions.camera_manip_hide_selected()
 
     def _camera_manip_show_all(self):
-        self._action.camera_manip_show_all()
+        self._actions.camera_manip_show_all()
 
     def _camera_manip_hide_all(self):
-        self._action.camera_manip_hide_all()
+        self._actions.camera_manip_hide_all()
 
     def _open_help(self):
 
         import webbrowser
         webbrowser.open(self.DOCUMENTATION_PATH)
 
-    def display(self):
 
-        self._init_ui()
-
-        # https://discourse.techart.online/t/mayas-dockableworkspacewidget-py-and-deleting-the-ui-upon-closing-maya/10664
-        control = "{}WorkspaceControl".format(self.INTERNAL_NAME)
-        if mc.workspaceControl(control, q=True, exists=True):
-            mc.workspaceControl(control,e=True, close=True)
-            mc.deleteUI(control, control=True)
-
-        self.resize(self.WIDTH, self.HEIGHT)
-
-        self.show(dockable=True, floating=True)
-
-        # TODO: A proper style sheet should be implemented...
-        #
-        self.setStyleSheet(
-            "QToolTip { color: #ffffff; background-color: #2a82da; border: 1px solid white; font-size:10pt }"
-            # TODO: not sure why font weight isn't being set for the title...
-            "QGroupBox::title { background-color: transparent; font-weight: bold; color: grey }"
-            "QGroupBox { padding: 2px 5px; border-width: 1px; border-style: solid; }"
-        )
-
-        log.info('Display of UI complete')
-
-    @classmethod
-    def destroy_previous_instance(cls):
-
-        root = maya_main_window()
-        destroy_child_widget(root, cls.INTERNAL_NAME)
-
-
+# TODO: Move into util module...
 # https://stackoverflow.com/questions/1343227/can-pythons-logging-format-be-modified-depending-on-the-message-log-level
 class CustomFormatter(logging.Formatter):
 
-    err_fmt  = "[%(name)s] %(msg)s"
-    dbg_fmt  = "[%(name)s] %(pathname)s.%(lineno)d: %(msg)s"
-    # dbg_fmt  = "DBG: %(module)s: %(lineno)d: %(msg)s"
+    err_fmt = "[%(name)s] %(msg)s"
+    dbg_fmt = "[%(name)s] %(pathname)s.%(lineno)d: %(msg)s"
     info_fmt = "[%(name)s] %(msg)s"
-    # formatter = logging.Formatter('%(name)s {%(pathname)s:%(lineno)d} %(levelname)s:  %(message)s')
 
     def __init__(self, fmt="%(levelno)s: %(msg)s"):
         logging.Formatter.__init__(self, fmt)
