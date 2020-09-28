@@ -43,6 +43,14 @@ DEFAULT_CLIP_PLANE_FAR = 50000.0
 ClipPair = namedtuple("ClipPair", "near far")
 
 
+class NothingSelectedError(Exception):
+    pass
+
+
+class FailedToResolveFromSelectionError(Exception):
+    pass
+
+
 # --- UI Utility Functions
 
 def maya_main_window():
@@ -111,6 +119,23 @@ def _in_view_msg_error(msg):
     mc.inViewMessage(assistMessage=msg, pos='topRight', fade=True, fontSize=8)
 
 
+def camera_manip_toggle(cameras, enable=True):
+    # type: (Iterable[nt.Camera], bool) -> None
+    """
+    TODO: Add documentation, took me a while to work out how to toggle this programmatically...
+    # https://help.autodesk.com/view/MAYAUL/2020/ENU/?guid=__PyMel_generated_functions_pymel_core_rendering_pymel_core_rendering_renderManip_html
+    """
+
+    # sets the visibility of the camera component manipulator for "clipping planes"
+    # ["cycling index", "center of interest", "pivot", "clipping planes", "unused"]
+    if enable:
+        manipulators_state = [False, False, False, True, False]
+    else:
+        manipulators_state = [False, False, False, False, False]
+    for cam in cameras:
+        pm.renderManip(cam, e=True, camera=manipulators_state)
+
+
 def resolve_cameras(nodes):
     # type: (Iterable[nt.DagNode]) -> Generator[nt.Camera]
     """
@@ -130,12 +155,12 @@ def resolve_cameras(nodes):
             yield node
 
 
-def reset_cameras_clip_plane(cameras, near, far):
+def set_cameras_clip_plane(cameras, near, far):
     # type: (Iterable[nt.Camera], float, float) -> None
     """
-    Reset defined cameras clip plane values.
+    Set defined cameras clip plane values.
 
-    :param cameras: Cameras to reset clip plane values.
+    :param cameras: Cameras to set clip plane values for.
     :param near: Near clip plane value to set.
     :param far: Far clip plane value to set.
 
@@ -156,16 +181,16 @@ def get_selected_cameras():
     if not sel:
         msg = "Nothing Selected!"
         log.error(msg)
-        raise RuntimeError(msg)
+        raise NothingSelectedError(msg)
 
     cameras = list(resolve_cameras(sel))
 
     # Raise if unable to resolve cameras from selection
     if not cameras:
-        log.error('Selection: "%s"', sel)
+        log.error('Selection: "%s"' % sel)
         msg = 'No cameras could be resolved from selection!'
         log.error(msg)
-        raise RuntimeError(msg, sel)
+        raise FailedToResolveFromSelectionError(msg)
 
     return cameras
 
@@ -216,16 +241,24 @@ class MayaResetCameraClipPlanes(object):
         log.debug('get_cameras_func: "%s"' % get_cameras_func.__name__)
         try:
             cameras = list(get_cameras_func())
-        except Exception as err:
-            t, v, tb = sys.exc_info()
+
+        except NothingSelectedError as err:
             msg = "[{}] {}".format(cls_name, err.message)
             _in_view_msg_error(msg)
+            raise
+        except FailedToResolveFromSelectionError as err:
+            msg = "[{}] {}".format(cls_name, err.message)
+            _in_view_msg_error(msg)
+            raise
+
+        except Exception:
+            t, v, tb = sys.exc_info()
             raise t, v, tb
 
         near = float(self.clip_values.near)
         far = float(self.clip_values.far)
 
-        reset_cameras_clip_plane(cameras, near, far)
+        set_cameras_clip_plane(cameras, near, far)
 
         log.info(
             'Reset camera clip planes on cameras: %s, '
@@ -235,16 +268,37 @@ class MayaResetCameraClipPlanes(object):
         msg = "[{}] reset cameras complete ".format(cls_name)
         _in_view_msg_info(msg)
 
+    # TODO: Add documentation...
+    # TODO: Handle if unable to resolve cameras from selection...
+    def camera_manip_show_selected(self):
+        cameras = get_selected_cameras()
+        camera_manip_toggle(cameras, enable=True)
 
-# This could be stored in a yaml file
-TOOLTIPS = {
-    "clip_edit_near": 'Value to set the camera(s) "nearClipPlane"',
-    "clip_edit_far": 'Value to set the camera(s) "farClipPlane"',
+    def camera_manip_hide_selected(self):
+        cameras = get_selected_cameras()
+        camera_manip_toggle(cameras, enable=False)
 
-    "cameras_selected": 'If checked, will set <b>selected cameras<b> in the scenes clip values',
-    "cameras_all": 'If checked, will set <b>all" cameras<b> in the scenes clip values',
-    "apply_btn": 'Click this button to set the clip plane values for the cameras defined by the "Camera Context"',
-}
+    def camera_manip_show_all(self):
+        cameras = get_all_cameras()
+        camera_manip_toggle(cameras, enable=True)
+
+    def camera_manip_hide_all(self):
+        cameras = get_all_cameras()
+        camera_manip_toggle(cameras, enable=False)
+
+
+from functools import wraps
+
+
+def set_return_widget_tooltip_from_docstring(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        qwidget = func(*args, **kwargs)
+        tooltip = func.func_doc  # type: QtWidgets.QWidget
+        qwidget.setToolTip(tooltip)
+        return qwidget
+
+    return wrapper
 
 
 # Encapsulate "Reset Camera Clip Planes UI" behaviour as it's own object.
@@ -255,7 +309,7 @@ class ResetCameraClipPlanesUI(MayaQWidgetDockableMixin, QWidget):
     DISPLAY_NAME = 'BI - Reset Camera Clip Planes'
     INTERNAL_NAME = 'ResetCameraClipPlanesUIa'
 
-    WIDTH = 450
+    WIDTH = 430
     HEIGHT = 130
 
     ResetCameraClipPlanes = MayaResetCameraClipPlanes
@@ -284,11 +338,31 @@ class ResetCameraClipPlanesUI(MayaQWidgetDockableMixin, QWidget):
 
         self._apply_btn = None  # type: QtWidgets.QPushButton
 
+    # Build UI behaviour
 
-# Build UI behaviour
-
+    @set_return_widget_tooltip_from_docstring
     def _init_ui_clip_edits(self):
-        # type: () -> QtWidgets.QLayout
+        # type: () -> QtWidgets.QWidget
+        """
+        <nobr>
+            <b>Near Clip Plane</b>: Value to set the camera(s) "<i>nearClipPlane</i>"<br>
+            <b> Far Clip Plane</b>: Value to set the camera(s) "<i>farClipPlane</i>"
+        </nobr>
+        """
+
+        # Setup
+
+        grp_box = QtWidgets.QGroupBox("Clip Plane values")
+
+        layout = QtWidgets.QFormLayout()
+        layout.setContentsMargins(1, 20, 1, 1)
+        layout.setSpacing(2)
+
+        # Build
+
+        validator = QtGui.QDoubleValidator()
+        validator.setBottom(0)
+        validator.setDecimals(3)
 
         def _create_line_edit(value):
             line_edit = QtWidgets.QLineEdit(str(value))
@@ -296,61 +370,114 @@ class ResetCameraClipPlanesUI(MayaQWidgetDockableMixin, QWidget):
             line_edit.setMinimumWidth(80)
             return line_edit
 
-        layout = QtWidgets.QFormLayout()
-        layout.setContentsMargins(1, 1, 1, 1)
-        layout.setSpacing(2)
-
-        validator = QtGui.QDoubleValidator()
-        validator.setBottom(0)
-        validator.setDecimals(3)
-
         near_edit = _create_line_edit(self.DEFAULT_NEAR)
         far_edit = _create_line_edit(self.DEFAULT_FAR)
 
         layout.addRow("Near Clip Plane", near_edit)
         layout.addRow("Far Clip Plane", far_edit)
 
+        # Finally
+
         self._clip_edit_near = near_edit
         self._clip_edit_far = far_edit
 
-        return layout
+        grp_box.setLayout(layout)
 
+        return grp_box
+
+    @set_return_widget_tooltip_from_docstring
     def _init_ui_camera_context_options(self):
-        # type: () -> QtWidgets.QLayout
+        # type: () -> QtWidgets.QWidget
+        """
+        <nobr>
+            <b>selected</b>: 'If checked, will set <b>selected cameras</b> clip values'<br>
+            <b>     all</b>: 'If checked, will set <b>all cameras</b> in the scene clip values'
+        </nobr>
+        """
 
         modes = self._action.action_map.keys()
 
-        button_grp =
+        # Setup
+
+        grp_box = QtWidgets.QGroupBox("Camera Context")
         layout = QtWidgets.QVBoxLayout()
-        layout.setContentsMargins(1, 1, 1, 1)
+        # layout.setContentsMargins(1, 1, 1, 1)
+        layout.addSpacing(10)
+        # Build
+
+        button_grp = QtWidgets.QButtonGroup()
 
         for ii, mode in enumerate(modes):  # type: Str
             rb = QtWidgets.QRadioButton(mode.capitalize())
             layout.addWidget(rb)
             button_grp.addButton(rb, ii)
-        layout.addStretch()
 
-        layout.itemAt(0).wid.setChecked(True)
+        layout.itemAt(1).wid.setChecked(True)
+        layout.addStretch()
+        # Finally
 
         self._camera_context_options_grp = button_grp
 
-        return layout
+        grp_box.setLayout(layout)
 
+        return grp_box
+
+    @set_return_widget_tooltip_from_docstring
     def _init_ui_action_buttons(self):
-        # type: () -> QtWidgets.QLayout
+        # type: () -> QtWidgets.QWidget
+        """
+        <nobr>
+            <b>Apply button</b>: Click this button to set the clip plane values
+            for the cameras defined by the "Camera Context"
+        </nobr>
+        """
+
+        grp_box = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout()
+
+        # Build
 
         apply_btn = QtWidgets.QPushButton("Apply")
-
-        layout = QtWidgets.QVBoxLayout()
         layout.addStretch()
         layout.addWidget(apply_btn)
 
+        # Finally
+
         self._apply_btn = apply_btn
 
-        return layout
+        grp_box.setLayout(layout)
+
+        return grp_box
+
+    def _init_ui_reset_clip_planes(self):
+        # type: () -> QtWidgets.QWidget
+
+        # Compose Widgets
+
+        clip_edit_wgt = self._init_ui_clip_edits()
+        camera_context_wgt = self._init_ui_camera_context_options()
+        actions_wgt = self._init_ui_action_buttons()
+
+        # Compose Tool Layout
+
+        grp_box = QtWidgets.QGroupBox("Reset Camera Clip Planes")
+        layout = QtWidgets.QHBoxLayout()
+        layout.setContentsMargins(5, 20, 5, 5)
+        layout.setSpacing(1)
+        grp_box.setLayout(layout)
+
+        layout.addWidget(clip_edit_wgt)
+        layout.addWidget(camera_context_wgt)
+        layout.addWidget(actions_wgt)
+
+        # Compose connections
+
+        self._apply_btn.clicked.connect(self._reset_cameras_clip_planes)
+
+        return grp_box
 
     # TODO: Perhaps should have implemented QMainWindow...
-    def _init_ui_menu_bar(self):
+    def _init_ui_menubar(self):
         # type: () -> QtWidgets.QMenuBar()
 
         menu_bar = QtWidgets.QMenuBar()
@@ -366,48 +493,50 @@ class ResetCameraClipPlanesUI(MayaQWidgetDockableMixin, QWidget):
 
         return menu_bar
 
-    def _init_ui_tool(self):
+    @set_return_widget_tooltip_from_docstring
+    def _init_ui_toolbar(self):
+        # type: () -> QtWidgets.QToolBar()
+        """
+        <nobr>
+            Tools to toggle the visibility of the Camera clip planes manipulators
+            for the selected cameras.
+        </nobr>
+        """
 
-        # Setup Widgets
+        grp_box = QtWidgets.QGroupBox("Camera manip")
+        layout = QtWidgets.QVBoxLayout()
 
-        camera_context_lyt = self._init_ui_camera_context_options()
+        tool_bar = QtWidgets.QToolBar()
+        tool_bar.setOrientation(QtCore.Qt.Vertical)
+        # TODO: Add icons...
+        tool_bar.setIconSize(QtCore.QSize(16, 16))
 
-        clip_edit_lyt = self._init_ui_clip_edits()
+        action_show_clip_manip = QtWidgets.QAction("show", self)
+        action_hide_clip_manip = QtWidgets.QAction("hide", self)
+        action_show_clip_manip_all = QtWidgets.QAction("show all", self)
+        action_hide_clip_manip_all = QtWidgets.QAction("hide all", self)
 
-        action_buttons_lyt = self._init_ui_action_buttons()
+        action_show_clip_manip.setToolTip("Show the camera clip planes manipulator for selected cameras")
+        action_hide_clip_manip.setToolTip("Hide the camera clip planes manipulator for selected cameras")
+        action_show_clip_manip.setToolTip("Show the camera clip planes manipulator for all cameras")
+        action_hide_clip_manip.setToolTip("Hide the camera clip planes manipulator for all cameras")
 
+        tool_bar.addAction(action_show_clip_manip)
+        tool_bar.addAction(action_hide_clip_manip)
 
-        # Setup Tool Layout
+        tool_bar.addAction(action_show_clip_manip_all)
+        tool_bar.addAction(action_hide_clip_manip_all)
 
-        layout = QtWidgets.QHBoxLayout()
+        action_show_clip_manip.triggered.connect(self._camera_manip_show_selected)
+        action_hide_clip_manip.triggered.connect(self._camera_manip_hide_selected)
+        action_show_clip_manip_all.triggered.connect(self._camera_manip_show_all)
+        action_hide_clip_manip_all.triggered.connect(self._camera_manip_hide_all)
 
-        clip_edit_grp_box = QtWidgets.QGroupBox("Set clip plane values")
-        clip_edit_grp_box.setLayout(clip_edit_lyt)
-        clip_edit_grp_box.set
+        layout.addSpacing(10)
+        layout.addWidget(tool_bar)
+        grp_box.setLayout(layout)
 
-        camera_context_grp_box = QtWidgets.QGroupBox("Camera Context")
-        camera_context_grp_box.setLayout(camera_context_lyt)
-
-        actions_grp_box = QtWidgets.QGroupBox("Actions")
-        actions_grp_box.setLayout(action_buttons_lyt)
-
-        layout.addWidget(clip_edit_grp_box)
-        layout.addWidget(camera_context_grp_box)
-        layout.addWidget(actions_grp_box)
-
-        # Setup connections
-
-        self._apply_btn.clicked.connect(self._do_it)
-
-        # Generate tool tips
-        tt = TOOLTIPS
-
-        self._clip_edit_near.setToolTip(tt['clip_edit_near'])
-        self._clip_edit_far.setToolTip(tt['clip_edit_far'])
-
-        self._apply_btn.setToolTip(tt['apply_btn'])
-
-        return layout
+        return grp_box
 
     def _init_ui(self):
         # type: () -> QtWidgets.QLayout()
@@ -416,8 +545,15 @@ class ResetCameraClipPlanesUI(MayaQWidgetDockableMixin, QWidget):
         main_layout.setMargin(2)
         main_layout.setSpacing(2)
 
-        menu_bar = self._init_ui_menu_bar()
-        tool_layout = self._init_ui_tool()
+        menu_bar = self._init_ui_menubar()
+
+        # Tools Section
+        set_clip_planes_grpbox = self._init_ui_reset_clip_planes()
+        tool_bar = self._init_ui_toolbar()
+
+        tools_layout = QtWidgets.QHBoxLayout()
+        tools_layout.addWidget(set_clip_planes_grpbox)
+        tools_layout.addWidget(tool_bar)
 
         line = QtWidgets.QFrame()
         line.setFixedHeight(1)
@@ -427,11 +563,11 @@ class ResetCameraClipPlanesUI(MayaQWidgetDockableMixin, QWidget):
 
         main_layout.addWidget(menu_bar)
         main_layout.addWidget(line)
-        main_layout.addLayout(tool_layout)
+        main_layout.addLayout(tools_layout)
 
         self.setLayout(main_layout)
 
-    return main_layout
+        return main_layout
 
     # UI Actions commands
 
@@ -442,14 +578,14 @@ class ResetCameraClipPlanesUI(MayaQWidgetDockableMixin, QWidget):
 
         self.resize(self.WIDTH, self.HEIGHT)
 
-    def _do_it(self):
+    def _reset_cameras_clip_planes(self):
 
-        reset_cameras = self._action
+        camera_actions = self._action
 
         def _get_mode():
             btn_grp = self._camera_context_options_grp
             mode_id = btn_grp.checkedId()
-            return reset_cameras.action_map.keys()[mode_id]
+            return camera_actions.action_map.keys()[mode_id]
 
         def _get_clip_values():
             near = float(self._clip_edit_near.text())
@@ -459,11 +595,23 @@ class ResetCameraClipPlanesUI(MayaQWidgetDockableMixin, QWidget):
         mode = _get_mode()
         clip_values = _get_clip_values()
 
-        log.debug('Camera context resolved from UI: "%s", "%s"', mode, clip_values)
+        log.debug('Camera context resolved from UI: "%s", "%s"' % (mode, clip_values))
 
-        reset_cameras.mode = mode
-        reset_cameras.clip_values = clip_values
-        reset_cameras.reset_cameras()
+        camera_actions.mode = mode
+        camera_actions.clip_values = clip_values
+        camera_actions.reset_cameras()
+
+    def _camera_manip_show_selected(self):
+        self._action.camera_manip_show_selected()
+
+    def _camera_manip_hide_selected(self):
+        self._action.camera_manip_hide_selected()
+
+    def _camera_manip_show_all(self):
+        self._action.camera_manip_show_all()
+
+    def _camera_manip_hide_all(self):
+        self._action.camera_manip_hide_all()
 
     def _open_help(self):
 
@@ -483,6 +631,15 @@ class ResetCameraClipPlanesUI(MayaQWidgetDockableMixin, QWidget):
         self.resize(self.WIDTH, self.HEIGHT)
 
         self.show(dockable=True, floating=True)
+
+        # TODO: A proper style sheet should be implemented...
+        #
+        self.setStyleSheet(
+            "QToolTip { color: #ffffff; background-color: #2a82da; border: 1px solid white; font-size:10pt }"
+            # TODO: not sure why font weight isn't being set for the title...
+            "QGroupBox::title { background-color: transparent; font-weight: bold; color: grey }"
+            "QGroupBox { padding: 2px 5px; border-width: 1px; border-style: solid; }"
+        )
 
         log.info('Display of UI complete')
 
