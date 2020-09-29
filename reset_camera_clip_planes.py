@@ -5,13 +5,12 @@ Tool to handle the reset camera/s clipping plane in Maya.
 This has been tested to run in Windows Maya2019.
 """
 
-__VERSION__ = "0.0.2"
+__VERSION__ = "0.0.3"
 
 # TODOS:
 # - TODO: Refactor code into separate modules...
 # - TODO: Cleanup stylesheet
 # - TODO: Add callback of camera selection to update a widget displaying the cameras the user has selected
-# - TODO: Should implement maya.cmds messages for better feedback where there is an error...
 
 from collections import namedtuple
 from collections import OrderedDict
@@ -31,7 +30,8 @@ from maya.app.general.mayaMixin import MayaQWidgetDockableMixin
 
 import maya.cmds as mc
 # Implementing pymel for convenience of OOP paradigm
-import pymel.core as pm
+# TODO: Should remove pymel due to the slow initialization of the first pymel.core import...
+import pymel.core.general as pm_general
 import pymel.core.nodetypes as nt
 
 # Qt imports
@@ -87,7 +87,7 @@ def is_node_of_type(node, node_type):
     :return: If node is of type.
 
     """
-    return node.type() == node_type
+    return mc.nodeType(str(node)) == node_type
 
 
 def _in_view_msg_info(msg):
@@ -131,7 +131,7 @@ def camera_manip_clipping_toggle(cameras, enable=True):
     else:
         manipulators_state = [False, False, False, False, False]
     for cam in cameras:
-        pm.renderManip(cam, e=True, camera=manipulators_state)
+        mc.renderManip(str(cam), e=True, camera=manipulators_state)
 
 
 def resolve_cameras(nodes):
@@ -173,7 +173,7 @@ def set_cameras_clip_plane(cameras, near, far):
 def get_selected_cameras():
     # type: () -> Iterable[nt.Camera]
 
-    sel = pm.ls(sl=True)
+    sel = pm_general.ls(sl=True)
 
     # Raise if nothing is selected in scene
     if not sel:
@@ -195,7 +195,7 @@ def get_selected_cameras():
 
 def get_all_cameras():
     # type: () -> Iterable[nt.Camera]
-    return pm.ls(cameras=True)
+    return pm_general.ls(cameras=True)
 
 
 # TODO: Move MayaResetCameraClipPlanes into it's own module...
@@ -245,13 +245,13 @@ class MayaResetCameraClipPlanes(object):
         except NothingSelectedError as err:
             msg = "[{}] {}".format(cls_name, err.message)
             _in_view_msg_error(msg)
-            raise
+            return
         except FailedToResolveFromSelectionError as err:
             msg = "[{}] {}".format(cls_name, err.message)
             _in_view_msg_error(msg)
-            raise
+            return
 
-        # TODO: Confirm if this is needed to propergate the raise traceback...
+        # TODO: Confirm if this is needed to propagate the raise traceback...
         except Exception:
             t, v, tb = sys.exc_info()
             raise t, v, tb
@@ -313,6 +313,15 @@ def destroy_child_widget(parent, child_name):
             widget.deleteLater()
 
 
+def get_widgets_upstream(widget):
+    yield widget
+
+    parent = widget.parent()
+    if parent:
+        for w in get_widgets_upstream(parent):
+            yield w
+
+
 def set_return_widget_tooltip_from_docstring(func):
     """
     Decorator to inject the function docstring into it's returned object tooltip.
@@ -334,16 +343,12 @@ def set_return_widget_tooltip_from_docstring(func):
 # Encapsulate "Reset Camera Clip Planes UI" behaviour as it's own object.
 # This is so it can be easily augmented with a different  DCC such as
 # Houdini, 3DsMax, etc.
-
-# TODO: Reimplement "MayaQWidgetDockableMixin", removed as it was causing issues for setting the initial size of the widget...
-# class ResetCameraClipPlanesUI(MayaQWidgetDockableMixin, QWidget):
-
-class ResetCameraClipPlanesUI(QWidget):
+class ResetCameraClipPlanesUI(MayaQWidgetDockableMixin, QWidget):
 
     _VERSION_ = __VERSION__
 
     DISPLAY_NAME = 'BI - Reset Camera Clip Planes'
-    INTERNAL_NAME = 'ResetCameraClipPlanesUI'
+    INTERNAL_NAME = 'ResetCameraClipPlanesUIa'
 
     WIDTH = 640
     HEIGHT = 160
@@ -358,11 +363,11 @@ class ResetCameraClipPlanesUI(QWidget):
 
         self.destroy_previous_instance()
 
+        parent = parent or maya_main_window()
         super(ResetCameraClipPlanesUI, self).__init__(parent, *args, **kwargs)
 
         self.setWindowTitle("{} - v{}".format(self.DISPLAY_NAME, self._VERSION_))
         self.setObjectName(self.INTERNAL_NAME)
-        self.setAttribute(QtCore.Qt.WA_DeleteOnClose, True)
 
         self._actions = self.ResetCameraClipPlanes()
 
@@ -372,21 +377,6 @@ class ResetCameraClipPlanesUI(QWidget):
         self._clip_edit_far = None  # type: Union[QtWidgets.QLineEdit, None]
 
         self._apply_btn = None  # type: Union[QtWidgets.QPushButton, None]
-
-
-        # https://discourse.techart.online/t/how-to-make-a-pyside-ui-stay-on-top-of-maya-only/12473
-        # https://stackoverflow.com/questions/49502170/how-to-make-a-dialog-window-stay-on-top-of-only-maya-motionbuilder-parent-progra
-        # TODO: Noticed that the Tool UI would go behind the Maya window after making a selection in the viewport
-        # The below code should fix that, however the widget gets embedded into the UI
-        # Should add this widget to a QtWidgets.QMainWindow ?
-
-        # parent = parent or maya_main_window()
-        # self.setParent(parent)
-
-        # TODO: This is a temporary work around as this seems to make the window
-        # stay above all windows in the OS (╯°□°)╯︵ ┻━┻
-        # self.setWindowFlags(QtCore.Qt.Tool)
-        self.setWindowFlags(QtCore.Qt.WindowStaysOnTopHint)
 
     @classmethod
     def destroy_previous_instance(cls):
@@ -424,7 +414,7 @@ class ResetCameraClipPlanesUI(QWidget):
         def _create_line_edit(value):
             line_edit = QtWidgets.QLineEdit(str(value))
             line_edit.setValidator(validator)
-            line_edit.setMinimumWidth(80)
+            line_edit.setMinimumWidth(100)
             return line_edit
 
         near_edit = _create_line_edit(self.DEFAULT_NEAR)
@@ -471,7 +461,7 @@ class ResetCameraClipPlanesUI(QWidget):
             button_grp.addButton(rb, ii)
 
         layout.itemAt(1).wid.setChecked(True)
-        layout.addStretch()
+        layout.addSpacing(10)
         # Finally
 
         self._camera_context_options_grp = button_grp
@@ -630,19 +620,12 @@ class ResetCameraClipPlanesUI(QWidget):
 
         self._init_ui()
 
-        # TODO: the initial resize doesn't seem to be working as expected....
-        self.resize(self.WIDTH, self.HEIGHT)
+        control = "{}WorkspaceControl".format(self.INTERNAL_NAME)
+        if mc.workspaceControl(control, q=True, exists=True):
+            mc.workspaceControl(control, e=True, close=True)
+            mc.deleteUI(control, control=True)
 
-        # TODO: Reimplement "MayaQWidgetDockableMixin", removed as it was causing issues for setting the initial size of the widget...
-        # https://discourse.techart.online/t/mayas-dockableworkspacewidget-py-and-deleting-the-ui-upon-closing-maya/10664
-        # control = "{}WorkspaceControl".format(self.INTERNAL_NAME)
-        # if mc.workspaceControl(control, q=True, exists=True):
-        #     mc.workspaceControl(control,e=True, close=True)
-        #     mc.deleteUI(control, control=True)
-        #
-        # self.show(dockable=True, floating=True)
-
-        self.show()
+        self.show(dockable=True, floating=True)
 
         # TODO: A proper style sheet should be implemented...
         # TODO: Improve QGroupBox margins...
@@ -651,9 +634,14 @@ class ResetCameraClipPlanesUI(QWidget):
             # TODO: not sure why font weight isn't being set for the title...
             "QGroupBox::title { background-color: transparent; font-weight: bold; color: grey }"
             "QGroupBox { padding: 2px 5px; border-width: 1px; border-style: solid; }"
-            # TODO: reduece
+            # TODO: reduce sie of buttons
             # "QPushButton { margin 0px; padding 0px 20px; border-width: 1px; }"
         )
+
+        # last item is MayaWindow. The child of MayaWindow
+        # is the widget we want to resize
+        parent_widgets = list(get_widgets_upstream(tool_ui))
+        parent_widgets[-2].setFixedSize(tool_ui.WIDTH, tool_ui.HEIGHT)
 
         log.info('Display of UI complete')
 
@@ -663,8 +651,6 @@ class ResetCameraClipPlanesUI(QWidget):
 
         self._clip_edit_near.setText(str(self.DEFAULT_NEAR))
         self._clip_edit_far.setText(str(self.DEFAULT_FAR))
-
-        self.resize(self.WIDTH, self.HEIGHT)
 
     def _reset_cameras_clip_planes(self):
 
@@ -711,9 +697,9 @@ class ResetCameraClipPlanesUI(QWidget):
 # https://stackoverflow.com/questions/1343227/can-pythons-logging-format-be-modified-depending-on-the-message-log-level
 class CustomFormatter(logging.Formatter):
 
-    err_fmt = "[%(name)s] %(msg)s"
-    dbg_fmt = "[%(name)s] %(pathname)s.%(lineno)d: %(msg)s"
-    info_fmt = "[%(name)s] %(msg)s"
+    err_fmt = "[%(name)s] %(levelname)s: %(msg)s"
+    dbg_fmt = "[%(name)s] %(levelname)s: %(pathname)s.%(lineno)d: %(msg)s"
+    info_fmt = "[%(name)s] %(levelname)s: %(msg)s"
 
     def __init__(self, fmt="%(levelno)s: %(msg)s"):
         logging.Formatter.__init__(self, fmt)
@@ -749,8 +735,6 @@ if __name__ == "__main__":
     log = logging.getLogger("reset_camera_clip_planes")
     log.propagate = False
 
-    # root_logger = logging.getLogger()
-
     log_level = logging.DEBUG
     # log_level = logging.INFO
 
@@ -766,4 +750,5 @@ if __name__ == "__main__":
     log.setLevel(log_level)
 
     tool_ui = ResetCameraClipPlanesUI()
-    tool_ui.display()
+    # Delay to make sure pymel has been imported...
+    QtCore.QTimer.singleShot(100, tool_ui.display)
