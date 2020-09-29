@@ -1,3 +1,11 @@
+## TODOS...
+ - Add option to run on all cameras in the scene except for defaults. 
+   - Or add a widget that presents all cameras available in scene and allows the user to choose what cameras to run the operation on...
+ - Update near and far `QLineEdit`s to `QDoubleSpinBox`
+ - If the user presses enter in the near and far widget, this should envoke the "apply"
+
+---
+
 ## Summary
 
 Maya UI Tool to reset the scenes camera(s) clip plane values.
@@ -5,11 +13,7 @@ Maya UI Tool to reset the scenes camera(s) clip plane values.
 <img alt="Screenshot of a Reset Camera Clip Planes UI session in Maya" 
 src="https://user-images.githubusercontent.com/7044060/94517952-fd688480-01f6-11eb-8e4c-df40fc3dfdf2.gif" width="600" />
 
-## TODOS...
- - Add option to run on all cameras in the scene except for defaults. 
-   - Or add a widget that presents all cameras available in scene and allows the user to choose what cameras to run the operation on...
- - Update near and far `QLineEdit`s to `QDoubleSpinBox`
- - If the user presses enter in the near and far widget, this should envoke the "apply"
+---
 
 ## Install and displaying the UI
 
