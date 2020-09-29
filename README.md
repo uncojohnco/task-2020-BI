@@ -1,7 +1,9 @@
 ## Summary
 
 Maya UI Tool to reset the scenes camera(s) clip plane values.
-> TODO: Add video demo
+
+<img alt="Screenshot of a Reset Camera Clip Planes UI session in Maya" 
+src="https://user-images.githubusercontent.com/7044060/94517952-fd688480-01f6-11eb-8e4c-df40fc3dfdf2.gif" width="600" />
 
 ## Install and displaying the UI
 
@@ -9,7 +11,7 @@ Maya UI Tool to reset the scenes camera(s) clip plane values.
 2. copy `reset_camera_clip_planes.py` into:
    - **Windows**: `$HOME/maya/scripts`
      e.g. on my instance of Windows it would be`C:/Users/johnco/Documents/maya/scripts`
-3. From a `Python shell` in the `Maya Script Editor`, execute the below:
+3. From a `Python Buffer` in the `Maya Script Editor`, execute the below:
    - **Windows**:
    ```python
    import os
