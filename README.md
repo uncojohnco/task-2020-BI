@@ -18,18 +18,22 @@ Maya UI Tool to reset the scenes camera(s) clip plane values.
    # e.g. "C:/Users/johnco/Documents/maya/scripts/reset_camera_clip_planes.py"
    execfile(script_path)
    ```
-<img src="https://user-images.githubusercontent.com/7044060/94467554-21917a80-0191-11eb-91fb-a411ea3af11c.png" width="300" />
+<img alt="Screenshot of a Reset Camera Clip Planes UI session in Maya" 
+src="https://user-images.githubusercontent.com/7044060/94467554-21917a80-0191-11eb-91fb-a411ea3af11c.png" width="300" />
 
 ## Usage
 
-With the tool open:<br>
-<img src="https://user-images.githubusercontent.com/7044060/94468728-e728dd00-0192-11eb-90ff-a15252458ff7.png" width="400" />
+With the tool open...<br>
+<img alt="Screenshot of the Reset Camera Clip Planes UI" 
+src="https://user-images.githubusercontent.com/7044060/94468728-e728dd00-0192-11eb-90ff-a15252458ff7.png" width="600" />
 
 ### Reset Camera Clip Planes Operation
 
-<img src="https://user-images.githubusercontent.com/7044060/94469218-b72e0980-0193-11eb-82f9-9600331f14cb.png" width="400" />
+<img src="https://user-images.githubusercontent.com/7044060/94506792-347d6c80-01dc-11eb-84c1-e6de53ea92eb.png" width="400" />
 1. Set the clip plane values to desired values
+
 > TODO: Add screen shot or gif
+
 2. Choose the camera context to for the "Apply" operation to execute on.
    - Can either be run on the selected cameras in the scene
    - Or on all cameras
@@ -43,11 +47,13 @@ With the tool open:<br>
 
 ### Camaera Manipulator display
 Maya has a handy feature to display a manipulator visualising the near and far clip planes for a camera
-<img src="https://user-images.githubusercontent.com/7044060/94469013-556d9f80-0193-11eb-892c-c73b0816cccd.png" width="400" />
+<img alt="Demo of the Maya Camera Clip planes manipulator"
+src="https://user-images.githubusercontent.com/7044060/94506216-dac87280-01da-11eb-924b-afe84564aa15.gif" width="400" />
 
 
 The toolbox provides options
 - Show or hide the manipulator for cameras
 - The camera context to run on can either be on "Selection" or on "All" cameras in the scene
-<img src="https://user-images.githubusercontent.com/7044060/94469129-8fd73c80-0193-11eb-8527-febac1c591fa.png" />
+<img alt="Screenshot of the Camaera Manipulator Tool area"
+src="https://user-images.githubusercontent.com/7044060/94506700-0566fb00-01dc-11eb-886d-ff53a3feaeac.png" width="400"/>
 
